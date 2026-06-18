@@ -670,7 +670,7 @@
         </tr>
     </tbody></table></div>
         </div>
-        <div class="action-buttons" style=""><button class="action-btn save" id="saveBtn">💾 GUARDAR CAMBIOS</button><button class="action-btn secondary" id="pdfBtn">📄 PDF REPORTE</button><button class="action-btn secondary" id="xlsxBtn">📎 EXCEL</button></div>
+        <div class="action-buttons" style="align-items:center;"><span id="syncBadge" style="font-size:0.7rem;margin-right:auto;color:#95a5a6;font-family:'JetBrains Mono',monospace;"></span><button class="action-btn save" id="saveBtn">💾 GUARDAR CAMBIOS</button><button class="action-btn secondary" id="pdfBtn">📄 PDF REPORTE</button><button class="action-btn secondary" id="xlsxBtn">📎 EXCEL</button></div>
     </div>
 
     <div class="tab-pane" id="tab-gantt">
@@ -1770,7 +1770,7 @@ function renderProjectsTable(){
 
 function updatePriority(id, value) {
     let p = projects.find(proj => proj.id === id);
-    if (p) { p.prioridad = value; renderProjectsTable(); showToast('✅ Prioridad actualizada a: ' + value); }
+    if (p) { p.prioridad = value; renderProjectsTable(); showToast('✅ Prioridad actualizada a: ' + value); autoSave(); }
 }
 
 function initFilters(){
@@ -1785,11 +1785,11 @@ function setFilter(f){currentFilter=f;renderProjectsTable();initFilters();}
 function openEdit(id){let p=projects.find(x=>x.id===id);if(!p)return;editingId=id;document.getElementById('modalTitle').innerHTML='Editar Licitación';document.getElementById('f-nombre').value=p.nombre;document.getElementById('f-cliente').value=p.cliente;document.getElementById('f-monto').value=p.monto;document.getElementById('f-nivel').value=p.nivel;document.getElementById('f-estado').value=p.estado;document.getElementById('f-resp').value=p.resp||'';document.getElementById('f-cierre').value=p.cierre||'';document.getElementById('f-tipo').value=p.tipoProyecto||'obra-civil';document.getElementById('f-comentarios').value=p.comentarios||'';document.getElementById('f-duracion').value=p.duracion||'';document.getElementById('f-prioridad').value=p.prioridad||'media';document.getElementById('modalOverlay').classList.add('open');}
 function openDelete(id){deletingId=id;document.getElementById('deleteMsg').innerHTML=`¿Eliminar "${projects.find(p=>p.id===id)?.nombre}"?`;document.getElementById('deleteOverlay').classList.add('open');}
 function closeDelete(){document.getElementById('deleteOverlay').classList.remove('open');deletingId=null;}
-function confirmDelete(){if(deletingId){projects=projects.filter(p=>p.id!==deletingId);closeDelete();renderAll();}}
+function confirmDelete(){if(deletingId){projects=projects.filter(p=>p.id!==deletingId);closeDelete();renderAll();autoSave();}}
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open');editingId=null;}
 function openComentarioModal(id){let p=projects.find(x=>x.id===id);if(!p)return;comentarioEditId=id;document.getElementById('comentarioProyecto').innerHTML=p.nombre;document.getElementById('comentarioTexto').value=p.comentarios||'';document.getElementById('comentarioModal').classList.add('open');}
 function closeComentarioModal(){document.getElementById('comentarioModal').classList.remove('open');comentarioEditId=null;}
-function saveComentario(){if(comentarioEditId){let idx=projects.findIndex(x=>x.id===comentarioEditId);if(idx!==-1){projects[idx].comentarios=document.getElementById('comentarioTexto').value;closeComentarioModal();renderProjectsTable();showToast('📝 Comentario actualizado');}}}
+function saveComentario(){if(comentarioEditId){let idx=projects.findIndex(x=>x.id===comentarioEditId);if(idx!==-1){projects[idx].comentarios=document.getElementById('comentarioTexto').value;closeComentarioModal();renderProjectsTable();showToast('📝 Comentario actualizado');autoSave();}}}
 function closeJobModal(){document.getElementById('jobModal').classList.remove('open');}
 function generarTextoJob(id){
     let p=projects.find(x=>x.id===id);
@@ -2046,11 +2046,49 @@ function saveDuration(id) {
     proj.duracion = (val && val > 0) ? val : null;
     showToast('Duracion guardada — ' + (proj.duracion ? proj.duracion + ' dias' : 'estandar nivel ' + proj.nivel));
     renderGantt();
+    autoSave();
+}
+
+// ==================== CLOUD SYNC ====================
+let _saveTimer = null;
+
+async function loadFromCloud() {
+    try {
+        const r = await fetch('/.netlify/functions/data');
+        if (!r.ok) return;
+        const data = await r.json();
+        if (Array.isArray(data)) {
+            projects = data;
+            let el = document.getElementById('syncBadge');
+            if (el) { el.textContent = '☁️ Datos en la nube'; el.style.color = '#27ae60'; }
+        }
+    } catch(e) { console.log('Using built-in data:', e.message); }
+}
+
+function autoSave() {
+    clearTimeout(_saveTimer);
+    let el = document.getElementById('syncBadge');
+    if (el) { el.textContent = '🔄 Guardando...'; el.style.color = '#e67e22'; }
+    _saveTimer = setTimeout(async () => {
+        try {
+            const r = await fetch('/.netlify/functions/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(projects)
+            });
+            if (el) {
+                if (r.ok) { el.textContent = '☁️ Guardado en la nube'; el.style.color = '#27ae60'; }
+                else { el.textContent = '⚠️ Error al guardar'; el.style.color = '#e74c3c'; }
+            }
+        } catch(e) {
+            if (el) { el.textContent = '⚠️ Sin conexión'; el.style.color = '#e74c3c'; }
+        }
+    }, 1000);
 }
 
 // ==================== EVENT LISTENERS ====================
 document.getElementById('addProjectBtn').onclick=()=>{editingId=null;document.getElementById('modalTitle').innerHTML='Nueva Licitación';document.getElementById('f-nombre').value='';document.getElementById('f-cliente').value='';document.getElementById('f-monto').value='';document.getElementById('f-nivel').value='B';document.getElementById('f-estado').value='cotizando';document.getElementById('f-resp').value='';document.getElementById('f-cierre').value='';document.getElementById('f-tipo').value='obra-civil';document.getElementById('f-comentarios').value='';document.getElementById('f-duracion').value='';document.getElementById('f-prioridad').value='media';document.getElementById('modalOverlay').classList.add('open');};
-document.getElementById('modalSaveBtn').onclick=()=>{let nombre=document.getElementById('f-nombre').value,cliente=document.getElementById('f-cliente').value,monto=+document.getElementById('f-monto').value,nivel=document.getElementById('f-nivel').value,estado=document.getElementById('f-estado').value,resp=document.getElementById('f-resp').value,cierre=document.getElementById('f-cierre').value,tipoProyecto=document.getElementById('f-tipo').value,comentarios=document.getElementById('f-comentarios').value,duracion=+document.getElementById('f-duracion').value||null,prioridad=document.getElementById('f-prioridad').value,mes=cierre?new Date(cierre).getMonth()+1:new Date().getMonth()+1;if(!nombre||!cliente||!monto)return alert('Completa los campos obligatorios');if(editingId){let idx=projects.findIndex(x=>x.id===editingId);if(idx!==-1)projects[idx]={...projects[idx],nombre,cliente,monto,nivel,estado,resp,cierre,mes,tipoProyecto,comentarios,duracion,prioridad};showToast('✏️ Proyecto editado');}else{projects.push({id:Date.now(),nombre,cliente,nivel,monto,estado,resp,cierre,mes,tipoProyecto,comentarios,duracion,prioridad});showToast('➕ Nuevo proyecto agregado');}closeModal();renderAll();};
+document.getElementById('modalSaveBtn').onclick=()=>{let nombre=document.getElementById('f-nombre').value,cliente=document.getElementById('f-cliente').value,monto=+document.getElementById('f-monto').value,nivel=document.getElementById('f-nivel').value,estado=document.getElementById('f-estado').value,resp=document.getElementById('f-resp').value,cierre=document.getElementById('f-cierre').value,tipoProyecto=document.getElementById('f-tipo').value,comentarios=document.getElementById('f-comentarios').value,duracion=+document.getElementById('f-duracion').value||null,prioridad=document.getElementById('f-prioridad').value,mes=cierre?new Date(cierre).getMonth()+1:new Date().getMonth()+1;if(!nombre||!cliente||!monto)return alert('Completa los campos obligatorios');if(editingId){let idx=projects.findIndex(x=>x.id===editingId);if(idx!==-1)projects[idx]={...projects[idx],nombre,cliente,monto,nivel,estado,resp,cierre,mes,tipoProyecto,comentarios,duracion,prioridad};showToast('✏️ Proyecto editado');}else{projects.push({id:Date.now(),nombre,cliente,nivel,monto,estado,resp,cierre,mes,tipoProyecto,comentarios,duracion,prioridad});showToast('➕ Nuevo proyecto agregado');}closeModal();renderAll();autoSave();};
 document.getElementById('saveComentarioBtn').onclick=saveComentario;
 document.getElementById('saveBtn').onclick=guardarCambios;
 document.getElementById('whatsappBtn').onclick=()=>showToast('📱 Funcionalidad WhatsApp - Próximamente');
@@ -2059,9 +2097,10 @@ document.getElementById('xlsxBtn').onclick=exportToExcel;
 document.getElementById('copyJobBtn').onclick=()=>{let textarea=document.getElementById('jobTexto');textarea.select();document.execCommand('copy');showToast('📋 Texto copiado al portapapeles');};
 
 // ==================== INICIALIZACIÓN ====================
-document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('f-resp').innerHTML = '<option value="">— Sin asignar</option>' + 
+document.addEventListener('DOMContentLoaded', async function() {
+    document.getElementById('f-resp').innerHTML = '<option value="">— Sin asignar</option>' +
         RESPONSABLES.map(r => `<option value="${r}">${r}</option>`).join('');
+    await loadFromCloud();
     renderAll();
     initGanttFilters();
 });
